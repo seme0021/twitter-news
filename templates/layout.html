@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><title>Twitter News Stream</title>
+    <meta name="viewport" content="width=device-width,user-scalable=no">
+    <link href="http://fonts.googleapis.com/css?family=Nobile" rel="stylesheet" type="text/css">
+    <link rel=stylesheet type=text/css href="{{ url_for('static', filename='style.css') }}">
+    <script type="text/javascript" src="http://ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+    <script type=text/javascript>
+        $SCRIPT_ROOT = {{ request.script_root|tojson|safe }};
+    </script>
+    <script type=text/javascript>
+        setInterval(                               //Periodically
+                function()
+                {
+                    $.getJSON(                            //Get some values from the server
+                            $SCRIPT_ROOT + '/_refresh_results',      // At this URL
+                            {},                                // With no extra parameters
+                            function(data)                     // And when you get a response
+                            {
+                                $("#tweet").text(data.result.tweet);
+                                $("#number").text(data.result.name);
+                                $("#total_number").text(data.rtw_count); // Write the results into the
+                                // #result element
+                            });
+                },
+                10000);
+    </script>
+</head>
+<body>
+<div id="container">
+    <div class="content">
+        <p class="pending">
+            <span id="number"> {{ que[1]['name'] }}</span><span>&nbsp;tweeted /&nbsp;</span>
+            <span id="total_number">0</span><span>&nbsp;retweets /&nbsp;</span>
+        </p>
+        <div id="tweet"> {{ que[1]['tweet'] }}</div>
+        <div class="clearboth">
+
+        </div></div></div>
+</body>
+</html>
