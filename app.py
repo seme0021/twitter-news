@@ -38,11 +38,12 @@ def _get_sample_tweet():
 
 @app.route('/_refresh_results')
 def random_tweet():
+    error = None
     cur_batch_id = max([int(x) for x in r.smembers('batch-id')])
     tweets = r.keys("%s:unc:*" % cur_batch_id)
     shuffle(tweets)
     res = r.hgetall(tweets[0])
-    return jsonify(result=res)
+    return jsonify(result=res, error=error)
 
 
 @app.route('/')
@@ -55,4 +56,5 @@ def homepage():
     return render_template('layout.html', error=error, que=res)
 
 if __name__ == '__main__':
+    app.debug = True
     app.run(host='0.0.0.0', port=5000)
