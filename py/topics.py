@@ -6,6 +6,8 @@ from collections import defaultdict
 from datetime import datetime, timedelta, date
 import pickle
 import csv
+import ConfigParser
+import argparse
 
 REDIS_DB = 1
 REDIS_PORT = 6379
@@ -98,7 +100,7 @@ class GetTopics:
             twitter_handle = unprocessed_tweet['screen_name']
             tweet_id = key.split(':')[1]
             r.hmset('%s:unc:%s:%s' % (batch_id, twitter_handle, tweet_id), unprocessed_tweet)
-            print "Posted: %s" % unprocessed_tweet['tweet']
+            #print "Posted: %s" % unprocessed_tweet['tweet']
 
     def _write_tweet_to_csv(self, keys, outfile, header):
         o = []
@@ -138,9 +140,24 @@ class GetTopics:
 
 
 if __name__ == '__main__':
+    #set inputs from commandline
+    parser = argparse.ArgumentParser(description='Read tweet processing config file.')
+    parser.add_argument('-c', dest='conf', required=True, help='Config File')
+
+    args = parser.parse_args()
+    twcf = args.conf
+
+    #Process Configurator File
+    config = ConfigParser.ConfigParser()
+    config.read(twcf)
+
+    path = config.get('BACKUP', 'path')
+    print "Loaded Configuration"
+
     cur_batch_id = max([int(x) for x in r.smembers('batch-id')])
     batch_id = cur_batch_id + 1
     dt = str(datetime.now()).replace(':', '').replace('.', ''). replace('-', '').replace(' ', '')
+    print "Current batch id is %s. New batch id is %s." % (cur_batch_id, batch_id)
 
     handle = GetTopics(batch_id)
 
@@ -152,11 +169,11 @@ if __name__ == '__main__':
     df_cur = handle.build_df('%s:unc:*' % cur_batch_id)
     df = pd.concat([df, df_cur])
     df.drop_duplicates(cols='id', take_last=True, inplace=True)
-
+    print "Built a dataframe with tweets to build topics from. # of records: %s" % len(df)
     #Build a dictionary from unprocessed tweets
 
     #Get stoplist
-    with open('./db/word_count.csv') as f:
+    with open('%s/word_count.csv' % path) as f:
         stoplist = f.read().splitlines()
     stoplist = [x.split(',')[0] for x in stoplist[1:int(float(len(stoplist)) * 0.045)]]
 
@@ -174,47 +191,59 @@ if __name__ == '__main__':
     texts = [[word for word in text if word not in tokens_once] for text in texts]
 
     dictionary = corpora.Dictionary(texts)
-    dictionary.save('./db/news_corpus_%s.dict' % dt)
+    dictionary.save('%s/news_corpus_%s.dict' % (path, dt))
+    print "Built and saved dictionary to: %s/news_corpus_%s.dict" % (path, dt)
 
     corpus = [dictionary.doc2bow(text) for text in texts]
-    corpora.MmCorpus.serialize('./db/news_corpus_%s.mm' % dt, corpus)
+    corpora.MmCorpus.serialize('%s/news_corpus_%s.mm' % (path, dt), corpus)
+    print "Built and saved corpus to: %s/news_corpus_%s.dict" % (path, dt)
 
-    dictionary = corpora.Dictionary.load('./db/news_corpus_%s.dict' % dt)
-    corpus = corpora.MmCorpus('./db/news_corpus_%s.mm' % dt)
+    dictionary = corpora.Dictionary.load('%s/news_corpus_%s.dict' % (path, dt))
+    corpus = corpora.MmCorpus('%s/news_corpus_%s.mm' % (path, dt))
 
     #Build topical models
     tfidf = models.TfidfModel(corpus)
     corpus_tfidf = tfidf[corpus]
     lsi = models.LsiModel(corpus_tfidf, id2word=dictionary, num_topics=15)
+    print "Built topicalm model"
+    for i in range(0, 15):
+        print lsi.print_topic(i)
 
     #Pickle model
-    output = open('./db/lsi_model_%s.pkl' % dt, 'wb')
+    output = open('%s/lsi_model_%s.pkl' % (path, dt), 'wb')
     pickle.dump(lsi, output)
     output.close()
+    print "pickled lsi: %s/lsi_model_%s.pkl" % (path, dt)
 
     #Score unprocessed tweets
     header = ['rtw_count', 'screen_name', 'tweet', 'q', 'user_follower_count', 'user_image_url', 'created_at', 'fav_count', 'name']
     keys = r.keys('upt:*')
     dfs_quality = handle._score_upt(keys, lsi, dictionary, stoplist2)
+    print "Got %s quality tweets!" % len(dfs_quality)
 
     scored_tweets = handle._get_quality_tweets(dfs_quality)
     quality_tweets = scored_tweets['quality']
     handle._populate_unclassified_tweets(quality_tweets, batch_id)
+    print "populated redis db with quality tweets. batch_id: %s." % batch_id
     #Backup quality tweets
-    outf = handle._write_tweet_to_csv(quality_tweets, './db/bkup_quality_%s.csv' % dt, header)
+    outf = handle._write_tweet_to_csv(quality_tweets, '%s/bkup_quality_%s.csv' % (path, dt), header)
     handle._delete_keys(quality_tweets)
+    print "Backed up quality tweets to %s/bkup_quality_%s.csv." % (path, dt)
 
     #Backup junk tweets
-    outf = handle._write_tweet_to_csv(scored_tweets['junk'], './db/bkup_junk_%s.csv' % dt, header)
+    outf = handle._write_tweet_to_csv(scored_tweets['junk'], '%s/bkup_junk_%s.csv' % (path, dt), header)
     handle._delete_keys(scored_tweets['junk'])
+    print "Backed up junk tweets to%s/bkup_junk_%s.csv." % (path, dt)
 
     #Backup keep-around tweets
-    outf = handle._write_tweet_to_csv(scored_tweets['keep_around'], './db/bkup_keep_around_%s.csv' % dt, header)
+    outf = handle._write_tweet_to_csv(scored_tweets['keep_around'], '%s/bkup_keep_around_%s.csv' % (path, dt), header)
+    print "Backed up keep-around tweets to %s/bkup_keep_around_%s.csv" % (path, dt)
 
     #Backup and delete old-unprocessed tweets (more than 2 days old)
     old_keys = handle._old_upt_keys(r.keys('upt:*'), 1)
     handle._delete_keys(old_keys)
     r.sadd('batch-id', batch_id)
+    print "Done!!!!"
 
 
 
