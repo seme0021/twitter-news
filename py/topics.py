@@ -57,8 +57,14 @@ class GetTopics:
         df['words'] = df['tweet'].apply(self._strip_tags)
         return df
 
+    @staticmethod
+    def _score_all(tweet, lsi, dictionary):
+        ncorp = dictionary.doc2bow(tweet.lower().split())
+        nscore = lsi[ncorp]
+        return nscore
+
     def _score(self, tweet, lsi, dictionary):
-        ncorp = dictionary.doc2bow(tweet)
+        ncorp = dictionary.doc2bow(tweet.lower().split())
         nscore = lsi[ncorp]
         highest_prob = sorted(nscore, key=lambda x: x[1])[-1]
         res = {'topic_id': highest_prob[0],
@@ -181,7 +187,7 @@ if __name__ == '__main__':
     #Get additional stopwords
     stopwords2 = ['tweet', 'too', 'me', 'ask', 'your', 'need', 'hint', 'by', 'for', 'under', 'about',
                   'your', 'news', 'news.', 'thx', 'via', 'why', 'up', 'us', 'then',
-                  'make', '&amp;']
+                  'make', '&amp;', 'says', '"the', 'lets']
     stoplist2 = stoplist + stopwords2
 
     #build dictionary and corpus
@@ -196,7 +202,7 @@ if __name__ == '__main__':
 
     corpus = [dictionary.doc2bow(text) for text in texts]
     corpora.MmCorpus.serialize('%s/news_corpus_%s.mm' % (path, dt), corpus)
-    print "Built and saved corpus to: %s/news_corpus_%s.dict" % (path, dt)
+    print "Built and saved corpus to: %s/news_corpus_%s.mm" % (path, dt)
 
     dictionary = corpora.Dictionary.load('%s/news_corpus_%s.dict' % (path, dt))
     corpus = corpora.MmCorpus('%s/news_corpus_%s.mm' % (path, dt))
@@ -244,7 +250,3 @@ if __name__ == '__main__':
     handle._delete_keys(old_keys)
     r.sadd('batch-id', batch_id)
     print "Done!!!!"
-
-
-
-
