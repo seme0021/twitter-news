@@ -63,6 +63,18 @@ class GetTopics:
         nscore = lsi[ncorp]
         return nscore
 
+    @staticmethod
+    def _get_tweet_by_key(key):
+        return r.hgetall(key)
+
+    def _get_tweets_by_keys(self, keys):
+        d = {}
+        for key in keys:
+            tweet_dict = self._get_tweet_by_key(key)
+            if len(tweet_dict) > 0:
+                d[key] = tweet_dict
+        return d
+
     def _score(self, tweet, lsi, dictionary):
         ncorp = dictionary.doc2bow(tweet.lower().split())
         nscore = lsi[ncorp]
@@ -113,7 +125,7 @@ class GetTopics:
         for key in keys:
             attr = r.hgetall(key)
             values = attr.keys()
-            if values == header:
+            if sorted(values) == sorted(header):
                 o.append([key] + attr.values())
         with open(outfile, 'wb') as f:
             writer = csv.writer(f)
@@ -222,7 +234,8 @@ if __name__ == '__main__':
     print "pickled lsi: %s/lsi_model_%s.pkl" % (path, dt)
 
     #Score unprocessed tweets
-    header = ['rtw_count', 'screen_name', 'tweet', 'q', 'user_follower_count', 'user_image_url', 'created_at', 'fav_count', 'name']
+    header = ['rtw_count', 'screen_name', 'tweet', 'q', 'user_follower_count',
+              'user_image_url', 'created_at', 'fav_count', 'name']
     keys = r.keys('upt:*')
     dfs_quality = handle._score_upt(keys, lsi, dictionary, stoplist2)
     print "Got %s quality tweets!" % len(dfs_quality)
@@ -249,4 +262,10 @@ if __name__ == '__main__':
     old_keys = handle._old_upt_keys(r.keys('upt:*'), 1)
     handle._delete_keys(old_keys)
     r.sadd('batch-id', batch_id)
+
+    #Backup old uncategorize tweets(where id = cur_batch_id -2 )
+    old_batch_id = cur_batch_id - 2
+    old_keys = r.keys('%s:unc:*' % old_batch_id)
+    outf = handle._write_tweet_to_csv(old_keys, '%s/unc_tweets_batch_%s_%s.csv' % (path, old_batch_id, dt), header)
+    handle._delete_keys(old_keys)
     print "Done!!!!"
